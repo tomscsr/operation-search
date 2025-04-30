@@ -2,6 +2,7 @@ import time
 import random
 import queue
 import matplotlib.pyplot as plt
+from tabulate import tabulate
 
 class FlowNetwork:
     def __init__(self, capacity, cost=None):
@@ -45,6 +46,10 @@ class FlowNetwork:
                 v = parent[v]
 
             max_flow += path_flow
+
+            # Afficher la trace de l'itération
+            self.print_residual_graph()
+
         return max_flow
 
     def push_relabel(self, source, sink):
@@ -94,13 +99,17 @@ class FlowNetwork:
 
     def bellman_ford(self, s):
         distance = [float('inf')] * self.n
+        prev = [-1] * self.n
         distance[s] = 0
+        
         for _ in range(self.n - 1):
             for u in range(self.n):
                 for v in range(self.n):
                     if self.capacity[u][v] > 0 and distance[v] > distance[u] + self.cost[u][v]:
                         distance[v] = distance[u] + self.cost[u][v]
-        return distance
+                        prev[v] = u
+        
+        return distance, prev
 
     def min_cost_flow(self, s, t, required_flow):
         flow = 0
@@ -108,20 +117,20 @@ class FlowNetwork:
         residual = [row[:] for row in self.capacity]
 
         while flow < required_flow:
-            dist = self.bellman_ford(s)
+            dist, prev = self.bellman_ford(s)
             if dist[t] == float('inf'):
                 break
 
             path_flow = required_flow - flow
             v = t
             while v != s:
-                u = self.prev[v]
+                u = prev[v]
                 path_flow = min(path_flow, residual[u][v])
                 v = u
 
             v = t
             while v != s:
-                u = self.prev[v]
+                u = prev[v]
                 residual[u][v] -= path_flow
                 residual[v][u] += path_flow
                 cost += path_flow * self.cost[u][v]
@@ -131,15 +140,26 @@ class FlowNetwork:
 
         return flow, cost
 
+    def print_residual_graph(self):
+        print("\nCurrent Residual Graph:")
+        table = []
+        for i in range(self.n):
+            table.append(self.flow[i])
+        print(tabulate(table, headers=[f"v{i}" for i in range(self.n)], tablefmt="grid"))
+
+
 def read_file(filename, with_cost=False):
-    with open(filename, 'r') as file:
+    # Ajouter le chemin du dossier input graphs
+    filepath = f"input graphs/{filename}"
+    with open(filepath, 'r') as file:
         n = int(file.readline())
         cap = [list(map(int, file.readline().split())) for _ in range(n)]
         if with_cost:
-            file.readline()
+            file.readline()  # Ligne vide entre capacité et coût
             cost = [list(map(int, file.readline().split())) for _ in range(n)]
             return cap, cost
         return cap, None
+
 
 def generate_random_flow_problem(n):
     cap = [[0 for _ in range(n)] for _ in range(n)]
@@ -156,44 +176,44 @@ def generate_random_flow_problem(n):
 
     return cap, cost
 
-def benchmark():
-    ns = [10, 20, 40, 100, 400, 1000, 4000]
-    FF_times, PR_times, MIN_times = [], [], []
 
-    for n in ns:
-        ff, pr, mn = [], [], []
-        for _ in range(100):
-            cap, cost = generate_random_flow_problem(n)
-            s, t = 0, n-1
-            
-            # Ford-Fulkerson
-            net = FlowNetwork([row[:] for row in cap])
-            start = time.time()
-            net.ford_fulkerson(s, t)
-            ff.append(time.time() - start)
+def main():
+    while True:
+        try:
+            print("\nFlow Network Algorithms")
+            print("1. Solve Max Flow Problem (Ford-Fulkerson / Push-Relabel)")
+            print("2. Solve Min-Cost Flow Problem")
+            print("3. Exit")
+            choice = input("Enter choice: ")
 
-            # Push-Relabel
-            net = FlowNetwork([row[:] for row in cap])
-            start = time.time()
-            net.push_relabel(s, t)
-            pr.append(time.time() - start)
+            if choice == '1':
+                problem = input("Enter the problem number (1-10): ")
+                print(f"Reading file proposal{problem}.txt...")
+                capacity, cost = read_file(f"proposal{problem}.txt", with_cost=True)
+                print("File read successfully")
+                net = FlowNetwork(capacity, cost)
+                algorithm_choice = input("Select algorithm (1. Ford-Fulkerson, 2. Push-Relabel): ")
+                if algorithm_choice == '1':
+                    print("Running Ford-Fulkerson...")
+                    max_flow = net.ford_fulkerson(0, len(capacity)-1)
+                    print(f"Max Flow (Ford-Fulkerson): {max_flow}")
+                elif algorithm_choice == '2':
+                    print("Running Push-Relabel...")
+                    max_flow = net.push_relabel(0, len(capacity)-1)
+                    print(f"Max Flow (Push-Relabel): {max_flow}")
+            elif choice == '2':
+                problem = input("Enter the problem number (1-10): ")
+                capacity, cost = read_file(f"proposal{problem}.txt", with_cost=True)
+                net = FlowNetwork(capacity, cost)
+                required_flow = int(input("Enter required flow: "))
+                flow, cost = net.min_cost_flow(0, len(capacity)-1, required_flow)
+                print(f"Min-Cost Flow: {flow}, Cost: {cost}")
+            elif choice == '3':
+                break
+            else:
+                print("Invalid choice. Try again.")
+        except Exception as e:
+            print(f"Une erreur s'est produite : {str(e)}")
 
-            # Min-Cost
-            net = FlowNetwork([row[:] for row in cap], cost)
-            start = time.time()
-            net.min_cost_flow(s, t, sum(cap[0]) // 2)
-            mn.append(time.time() - start)
-
-        FF_times.append(ff)
-        PR_times.append(pr)
-        MIN_times.append(mn)
-
-    # Plot
-    for times, label in zip([FF_times, PR_times, MIN_times], ["Ford-Fulkerson", "Push-Relabel", "Min-Cost"]):
-        plt.figure()
-        for i, n in enumerate(ns):
-            plt.scatter([n]*100, times[i], s=5)
-        plt.title(f"{label} Execution Time")
-        plt.xlabel("n")
-        plt.ylabel("Time (s)")
-        plt.show()
+if __name__ == '__main__':
+    main()

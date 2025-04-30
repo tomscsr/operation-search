@@ -57,12 +57,14 @@ class FlowNetwork:
         height = [0] * n
         excess = [0] * n
         flow = [[0] * n for _ in range(n)]
-
+        
+        # Initialisation
         height[source] = n
         for v in range(n):
             flow[source][v] = self.capacity[source][v]
             flow[v][source] = -self.capacity[source][v]
             excess[v] = self.capacity[source][v]
+        excess[source] = 0  # Important: réinitialiser l'excès de la source
 
         def push(u, v):
             send = min(excess[u], self.capacity[u][v] - flow[u][v])
@@ -70,31 +72,41 @@ class FlowNetwork:
             flow[v][u] -= send
             excess[u] -= send
             excess[v] += send
+            return send > 0
 
         def relabel(u):
             min_height = float('inf')
             for v in range(n):
                 if self.capacity[u][v] - flow[u][v] > 0:
                     min_height = min(min_height, height[v])
-            height[u] = min_height + 1
+            if min_height != float('inf'):
+                height[u] = min_height + 1
+                return True
+            return False
 
         def discharge(u):
-            for v in range(n):
-                while excess[u] > 0 and self.capacity[u][v] - flow[u][v] > 0:
-                    if height[u] == height[v] + 1:
-                        push(u, v)
-                    else:
-                        relabel(u)
+            while excess[u] > 0:
+                for v in range(n):
+                    if self.capacity[u][v] - flow[u][v] > 0 and height[u] == height[v] + 1:
+                        if push(u, v):
+                            break
+                else:
+                    relabel(u)
 
         active = [i for i in range(n) if i != source and i != sink and excess[i] > 0]
 
         while active:
             u = active.pop(0)
-            old_height = height[u]
             discharge(u)
-            if height[u] > old_height:
-                active.insert(0, u)
+            if excess[u] > 0:
+                active.append(u)
 
+        # Mettre à jour self.flow avec le flux final
+        for u in range(n):
+            for v in range(n):
+                self.flow[u][v] = flow[u][v]
+
+        # Retourner le flux maximal
         return sum(flow[source][i] for i in range(n))
 
     def bellman_ford(self, s):
@@ -147,6 +159,23 @@ class FlowNetwork:
             table.append(self.flow[i])
         print(tabulate(table, headers=[f"v{i}" for i in range(self.n)], tablefmt="grid"))
 
+    def verify_flow(self, source, sink):
+        # Vérifier la conservation du flux
+        for u in range(self.n):
+            if u != source and u != sink:
+                in_flow = sum(self.flow[v][u] for v in range(self.n))
+                out_flow = sum(self.flow[u][v] for v in range(self.n))
+                if in_flow != out_flow:
+                    return False
+
+        # Vérifier les contraintes de capacité
+        for u in range(self.n):
+            for v in range(self.n):
+                if self.flow[u][v] > self.capacity[u][v]:
+                    return False
+
+        return True
+
 
 def read_file(filename, with_cost=False):
     # Ajouter le chemin du dossier input graphs
@@ -192,21 +221,44 @@ def main():
                 capacity, cost = read_file(f"proposal{problem}.txt", with_cost=True)
                 print("File read successfully")
                 net = FlowNetwork(capacity, cost)
-                algorithm_choice = input("Select algorithm (1. Ford-Fulkerson, 2. Push-Relabel): ")
-                if algorithm_choice == '1':
-                    print("Running Ford-Fulkerson...")
-                    max_flow = net.ford_fulkerson(0, len(capacity)-1)
-                    print(f"Max Flow (Ford-Fulkerson): {max_flow}")
-                elif algorithm_choice == '2':
-                    print("Running Push-Relabel...")
-                    max_flow = net.push_relabel(0, len(capacity)-1)
-                    print(f"Max Flow (Push-Relabel): {max_flow}")
+                
+                # Exécuter Ford-Fulkerson
+                print("Running Ford-Fulkerson...")
+                ff_flow = net.ford_fulkerson(0, len(capacity) - 1)
+                print(f"Max Flow (Ford-Fulkerson): {ff_flow}")
+                
+                # Afficher la matrice de flux Ford-Fulkerson
+                print("Ford-Fulkerson Flow Matrix:")
+                print(tabulate(net.flow, headers=[f"v{i}" for i in range(len(capacity))], tablefmt="grid"))
+                
+                # Vérifier le flux
+                if not net.verify_flow(0, len(capacity) - 1):
+                    print("Erreur : le flux calculé est invalide.")
+                
+                # Réinitialiser le réseau et exécuter Push-Relabel
+                print("\nRunning Push-Relabel...")
+                net = FlowNetwork(capacity, cost)
+                pr_flow = net.push_relabel(0, len(capacity) - 1)
+                print(f"Max Flow (Push-Relabel): {pr_flow}")
+                
+                # Afficher la matrice de flux Push-Relabel
+                print("Push-Relabel Flow Matrix:")
+                print(tabulate(net.flow, headers=[f"v{i}" for i in range(len(capacity))], tablefmt="grid"))
+                
+                # Vérifier le flux
+                if not net.verify_flow(0, len(capacity) - 1):
+                    print("Erreur : le flux calculé est invalide.")
+                
+                # Comparer les résultats
+                if ff_flow != pr_flow:
+                    print("\nDifférence détectée!")
+                    print(f"Différence: {abs(ff_flow - pr_flow)}")
             elif choice == '2':
                 problem = input("Enter the problem number (1-10): ")
                 capacity, cost = read_file(f"proposal{problem}.txt", with_cost=True)
                 net = FlowNetwork(capacity, cost)
                 required_flow = int(input("Enter required flow: "))
-                flow, cost = net.min_cost_flow(0, len(capacity)-1, required_flow)
+                flow, cost = net.min_cost_flow(0, len(capacity) - 1, required_flow)
                 print(f"Min-Cost Flow: {flow}, Cost: {cost}")
             elif choice == '3':
                 break
